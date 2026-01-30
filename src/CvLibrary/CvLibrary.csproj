@@ -10,19 +10,29 @@
 
 	<!--Nuget包配置-->
 	<NuGetAuditMode>all</NuGetAuditMode>
-	<Company>Mitsuha9527</Company>
+	<Company></Company>
 	<Product>Leaf.$(AssemblyName)</Product>
 	<GeneratePackageOnBuild>False</GeneratePackageOnBuild>
-	<Version>1.0.4</Version>
+	<Version>1.0.5</Version>
 	<Description>图像/计算机视觉通用库，基于OpenCV实现。</Description>
-	<PackageProjectUrl>https://github.com/Mitsuha9527/Leaf.CvCommon.git</PackageProjectUrl>
 	<PackageOutputPath>nupkg</PackageOutputPath>
 	<PackageId>Leaf.$(AssemblyName)</PackageId>
+	<Authors>Mitsuha9527</Authors>
+	<PackageReadmeFile>README.md</PackageReadmeFile>
+	<PackageLicenseFile>LICENSE</PackageLicenseFile>
+	<Copyright>Copyright (c) 2024 Mitsuha9527</Copyright>
+	<PackageTags>cv;computer-vision;image-processing;opencv;vision</PackageTags>
+	<RepositoryUrl>https://github.com/Mitsuha9527/Leaf.CvLibrary.git</RepositoryUrl>
 	  
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Leaf.CvCommon" Version="1.0.1" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+    <None Include="LICENSE" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Leaf.CvCommon" Version="1.0.2" />
     <PackageReference Include="OpenCvSharp4.Windows" Version="4.11.0.20250507" />
   </ItemGroup>
 

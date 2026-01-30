@@ -1,0 +1,86 @@
+﻿THIRD-PARTY NOTICES
+====================
+
+This project uses the following third-party libraries:
+
+-------------------------------------------------------------------------------
+
+1. OpenCvSharp4
+   License: Apache License 2.0
+   Copyright: Copyright (c) 2008-2024 shimat
+   Project URL: https://github.com/shimat/opencvsharp
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   Full license text available at:
+   https://github.com/shimat/opencvsharp/blob/main/LICENSE
+
+-------------------------------------------------------------------------------
+
+2. OpenCV (used by OpenCvSharp4)
+   License: Apache License 2.0
+   Copyright: Copyright (C) 2000-2024, Intel Corporation, all rights reserved.
+              Copyright (C) 2009-2011, Willow Garage Inc., all rights reserved.
+              Copyright (C) 2009-2016, NVIDIA Corporation, all rights reserved.
+              Copyright (C) 2010-2013, Advanced Micro Devices, Inc., all rights reserved.
+              Copyright (C) 2015-2024, OpenCV Foundation, all rights reserved.
+   Project URL: https://opencv.org/
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+
+   Full license text available at:
+   https://github.com/opencv/opencv/blob/master/LICENSE
+
+-------------------------------------------------------------------------------
+
+APACHE LICENSE 2.0 SUMMARY
+==========================
+
+The Apache License 2.0 is a permissive license that includes:
+- Patent grant and retaliation clause
+- Trademark usage restrictions
+- Required attribution notices
+- Disclaimer of warranties
+- Limitation of liability
+
+For the complete Apache License 2.0 text, please visit:
+https://www.apache.org/licenses/LICENSE-2.0.txt
+
+-------------------------------------------------------------------------------
+
+COMPATIBILITY NOTICE
+====================
+
+Leaf.CvLibrary is licensed under the MIT License, which is compatible with
+the Apache License 2.0 used by OpenCvSharp4 and OpenCV. The original code
+of Leaf.CvLibrary is subject to the MIT License, while the included
+OpenCvSharp4 and OpenCV components remain under the Apache License 2.0.
+
+Users of Leaf.CvLibrary must comply with the terms of both licenses:
+- MIT License for the original Leaf.CvLibrary code
+- Apache License 2.0 for OpenCvSharp4 and OpenCV components
+
+-------------------------------------------------------------------------------
+
+For questions or concerns regarding licensing, please contact the project
+maintainer at: https://github.com/Mitsuha9527/Leaf.CvLibrary/issues
