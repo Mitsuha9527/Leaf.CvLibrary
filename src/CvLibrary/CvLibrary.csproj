@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	<LangVersion>preview</LangVersion>
+	<Platforms>AnyCPU;x64</Platforms>
+
+
+	<!--Nuget包配置-->
+	<NuGetAuditMode>all</NuGetAuditMode>
+	<Company>Mitsuha9527</Company>
+	<Product>Leaf.$(AssemblyName)</Product>
+	<GeneratePackageOnBuild>False</GeneratePackageOnBuild>
+	<Version>1.0.4</Version>
+	<Description>图像/计算机视觉通用库，基于OpenCV实现。</Description>
+	<PackageProjectUrl>https://github.com/Mitsuha9527/Leaf.CvCommon.git</PackageProjectUrl>
+	<PackageOutputPath>nupkg</PackageOutputPath>
+	<PackageId>Leaf.$(AssemblyName)</PackageId>
+	  
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Leaf.CvCommon" Version="1.0.1" />
+    <PackageReference Include="OpenCvSharp4.Windows" Version="4.11.0.20250507" />
+  </ItemGroup>
+
+</Project>
