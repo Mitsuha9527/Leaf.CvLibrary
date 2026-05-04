@@ -82,7 +82,7 @@ namespace CvCommon
         /// </summary>
         public bool IsEmpty
         {
-            get { return _width < 0; }
+            get { return _width <= 0 || _height <= 0; }
         }
 
         /// <summary>
@@ -95,7 +95,7 @@ namespace CvCommon
             {
                 if (IsEmpty)
                 {
-                    throw new InvalidOperationException("无法修改空矩形。");
+                    //throw new InvalidOperationException("无法修改空矩形。");
                 }
                 _x = value.X;
                 _y = value.Y;
@@ -107,27 +107,11 @@ namespace CvCommon
         /// </summary>
         public CvSize Size
         {
-            get
-            {
-                if (IsEmpty)
-                    return CvSize.Empty;
-                return new CvSize(_width, _height);
-            }
+            get { return new CvSize(_width, _height); }
             set
             {
-                if (value.IsEmpty)
-                {
-                    this = s_empty;
-                }
-                else
-                {
-                    if (IsEmpty)
-                    {
-                        throw new InvalidOperationException("无法修改空矩形。");
-                    }
-                    _width = value.Width;
-                    _height = value.Height;
-                }
+                _width = value.Width;
+                _height = value.Height;
             }
         }
 
@@ -139,10 +123,6 @@ namespace CvCommon
             get { return _x; }
             set
             {
-                if (IsEmpty)
-                {
-                    throw new InvalidOperationException("无法修改空矩形。");
-                }
                 _x = value;
             }
         }
@@ -155,10 +135,6 @@ namespace CvCommon
             get { return _y; }
             set
             {
-                if (IsEmpty)
-                {
-                    throw new InvalidOperationException("无法修改空矩形。");
-                }
                 _y = value;
             }
         }
@@ -171,10 +147,6 @@ namespace CvCommon
             get { return _width; }
             set
             {
-                if (IsEmpty)
-                {
-                    throw new InvalidOperationException("无法修改空矩形。");
-                }
                 if (value < 0)
                 {
                     throw new ArgumentException("宽度必须为非负数。");
@@ -191,10 +163,6 @@ namespace CvCommon
             get { return _height; }
             set
             {
-                if (IsEmpty)
-                {
-                    throw new InvalidOperationException("无法修改空矩形。");
-                }
                 if (value < 0)
                 {
                     throw new ArgumentException("高度必须为非负数。");
@@ -488,10 +456,10 @@ namespace CvCommon
         private static CvRect CreateEmptyRect()
         {
             CvRect rect = new CvRect();
-            rect._x = double.PositiveInfinity;
-            rect._y = double.PositiveInfinity;
-            rect._width = double.NegativeInfinity;
-            rect._height = double.NegativeInfinity;
+            rect._x = 0;
+            rect._y = 0;
+            rect._width = 0;
+            rect._height = 0;
             return rect;
         }
     }

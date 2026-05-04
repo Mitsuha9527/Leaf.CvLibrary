@@ -130,7 +130,7 @@ namespace CvLibrary.OpenCV
             if (x < 0 || y < 0 || x + width > mat.Width || y + height > mat.Height)
                 return new Mat();
             Rect rect = new Rect((int)x, (int)y, (int)width, (int)height);
-            return new Mat(mat, rect);
+            return new Mat(mat, rect).Clone();
         }
 
         public static Mat CropImage(Mat mat, CvRect rect)
@@ -143,7 +143,7 @@ namespace CvLibrary.OpenCV
             )
                 return new Mat();
             Rect rect1 = new Rect((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
-            return new Mat(mat, rect1);
+            return new Mat(mat, rect1).Clone();
         }
 
         public static Mat RotateImage(Mat mat, double angle)
@@ -171,24 +171,12 @@ namespace CvLibrary.OpenCV
                 Mat rotationMatrix = Cv2.GetRotationMatrix2D(center, angle, 1.0);
 
                 // Calculate the new bounding box size to prevent cropping
-                double cos = Math.Abs(rotationMatrix.At<double>(0, 0));
-                double sin = Math.Abs(rotationMatrix.At<double>(0, 1));
-                int newWidth = (int)(mat.Height * sin + mat.Width * cos);
-                int newHeight = (int)(mat.Height * cos + mat.Width * sin);
+                var bbox = new RotatedRect(center, mat.Size(), (float)angle).BoundingRect();
 
-                // Adjust the rotation matrix translation to center the image in the new bounding box
-                rotationMatrix.Set(
-                    0,
-                    2,
-                    rotationMatrix.At<double>(0, 2) + newWidth / 2.0 - center.X
-                );
-                rotationMatrix.Set(
-                    1,
-                    2,
-                    rotationMatrix.At<double>(1, 2) + newHeight / 2.0 - center.Y
-                );
+                rotationMatrix.Set(0, 2, rotationMatrix.At<double>(0, 2) + bbox.Width / 2.0 - center.X);
+                rotationMatrix.Set(1, 2, rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y);
 
-                Cv2.WarpAffine(mat, rotated, rotationMatrix, new Size(newWidth, newHeight));
+                Cv2.WarpAffine(mat, rotated, rotationMatrix, bbox.Size);
             }
             return rotated;
         }

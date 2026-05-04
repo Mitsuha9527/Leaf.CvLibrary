@@ -10,4 +10,5 @@
     <Platform Solution="*|x64" Project="x64" />
   </Project>
   <Project Path="src/CvLibraryExtensions/CvLibraryExtensions.csproj" />
+  <Project Path="src/Leaf.ColorDetector/Leaf.ColorDetector.csproj" />
 </Solution>
