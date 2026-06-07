@@ -317,17 +317,17 @@ namespace CvLibrary.OpenCV.Match
                         searchPyramid[0], refinedTopLeft, candidate.Angle, 0);
                 }
 
+                // 按 ROI 过滤（裁剪图坐标系：refinedPos 与 effectiveRoi 在同一坐标系）
+                if (roi.HasValue)
+                {
+                    if (refinedPos.X < roi.Value.X || refinedPos.X > roi.Value.X + roi.Value.Width ||
+                        refinedPos.Y < roi.Value.Y || refinedPos.Y > roi.Value.Y + roi.Value.Height)
+                        continue;
+                }
+
                 // 转换到源图坐标
                 double globalX = refinedPos.X + offsetX;
                 double globalY = refinedPos.Y + offsetY;
-
-                // 按 ROI 过滤
-                if (roi.HasValue)
-                {
-                    if (globalX < roi.Value.X || globalX > roi.Value.X + roi.Value.Width ||
-                        globalY < roi.Value.Y || globalY > roi.Value.Y + roi.Value.Height)
-                        continue;
-                }
 
                 results.Add(new CvMatchResult
                 {
