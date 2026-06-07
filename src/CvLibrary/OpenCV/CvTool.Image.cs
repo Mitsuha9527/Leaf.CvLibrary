@@ -146,38 +146,31 @@ namespace CvLibrary.OpenCV
             return new Mat(mat, rect1).Clone();
         }
 
+        /// <summary>
+        /// 旋转图像（统一使用 WarpAffine，所有角度走同一路径，保证包围盒尺寸连续性）。
+        /// 填充区域使用灰色（128），避免黑色边框造成的零方差问题。
+        /// </summary>
         public static Mat RotateImage(Mat mat, double angle)
         {
-            Mat rotated = new();
-            if (angle == 90)
-            {
-                Cv2.Rotate(mat, rotated, RotateFlags.Rotate90Clockwise);
-            }
-            else if (angle == -90 || angle == 270)
-            {
-                Cv2.Rotate(mat, rotated, RotateFlags.Rotate90Counterclockwise);
-            }
-            else if (angle == 180 || angle == -180)
-            {
-                Cv2.Rotate(mat, rotated, RotateFlags.Rotate180);
-            }
-            else if (angle == 0)
-            {
+            // 归一化角度到 [0, 360)
+            angle = ((angle % 360) + 360) % 360;
+            if (Math.Abs(angle) < 1e-6)
                 return mat.Clone();
-            }
-            else
-            {
-                Point2f center = new(mat.Width / 2f, mat.Height / 2f);
-                Mat rotationMatrix = Cv2.GetRotationMatrix2D(center, angle, 1.0);
 
-                // Calculate the new bounding box size to prevent cropping
-                var bbox = new RotatedRect(center, mat.Size(), (float)angle).BoundingRect();
+            Point2f center = new(mat.Width / 2f, mat.Height / 2f);
+            using Mat rotationMatrix = Cv2.GetRotationMatrix2D(center, angle, 1.0);
 
-                rotationMatrix.Set(0, 2, rotationMatrix.At<double>(0, 2) + bbox.Width / 2.0 - center.X);
-                rotationMatrix.Set(1, 2, rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y);
+            // 计算旋转后的包围盒大小
+            var bbox = new RotatedRect(center, mat.Size(), (float)angle).BoundingRect();
 
-                Cv2.WarpAffine(mat, rotated, rotationMatrix, bbox.Size);
-            }
+            // 调整平移量，防止图像被裁剪
+            rotationMatrix.Set(0, 2, rotationMatrix.At<double>(0, 2) + bbox.Width / 2.0 - center.X);
+            rotationMatrix.Set(1, 2, rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y);
+
+            Mat rotated = new();
+            Cv2.WarpAffine(mat, rotated, rotationMatrix, bbox.Size,
+                InterpolationFlags.Cubic, BorderTypes.Constant, Scalar.All(128));
+
             return rotated;
         }
 

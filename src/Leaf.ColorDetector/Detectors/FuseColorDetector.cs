@@ -1,9 +1,10 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using CvCommon;
 using CvLibrary.OpenCV;
 using Leaf.ColorDetector.ColorScience;
 using Leaf.ColorDetector.Models;
 using Leaf.ColorDetector.Preprocessing;
+using Microsoft.Extensions.Logging;
 using OpenCvSharp;
 
 namespace Leaf.ColorDetector.Detectors;
@@ -14,7 +15,7 @@ namespace Leaf.ColorDetector.Detectors;
 /// 检测流程：
 /// 1. ROI 裁剪 → 中心区域采样
 /// 2. 高斯模糊降噪
-/// 3. HSV 生成掩码（仅排除高光/阴影，不参与颜色判定）
+/// 3. HSV 生成掩码（排除非消色低亮度像素，消色系豁免）
 /// 4. BGR → Lab 转换
 /// 5. 对有效像素提取鲁棒 Lab 统计量（MAD 离群值剔除 + 中位数 a*b* + 截断均值 L*）
 /// 6. 对每种候选颜色计算 ΔE2000 色差 → 高斯评分函数转为得分
@@ -25,10 +26,14 @@ namespace Leaf.ColorDetector.Detectors;
 public class FuseColorDetector : IFuseColorDetector
 {
     private readonly ColorDetectorOptions _options;
+    private readonly ILogger<FuseColorDetector>? _logger;
 
-    public FuseColorDetector(ColorDetectorOptions? options = null)
+    public FuseColorDetector(
+        ColorDetectorOptions? options = null,
+        ILogger<FuseColorDetector>? logger = null)
     {
         _options = options ?? new ColorDetectorOptions();
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -38,7 +43,7 @@ public class FuseColorDetector : IFuseColorDetector
         string expectedColor,
         IReadOnlyList<FuseColorDefinition> colorDefinitions)
     {
-        using var roiMat = CvTool.CropImage(imageMat,roi);
+        using var roiMat = CvTool.CropImage(imageMat, roi);
         return Detect(roiMat, expectedColor, colorDefinitions);
     }
 
@@ -52,72 +57,83 @@ public class FuseColorDetector : IFuseColorDetector
         var totalPixels = roiMat.Rows * roiMat.Cols;
 
         if (roiMat.Empty() || totalPixels == 0)
-        {
             return BuildResult(
                 expectedColor, totalPixels, 0,
                 0, 0, 0, 0, true,
                 [], DetectQuality.Insufficient, timestamp);
-        }
 
-        // 预处理：得到 Lab 图像 + 有效像素掩码
+        // 预处理 + Lab 统计量提取
         var (labMat, validMask) = ImagePreprocessor.Preprocess(roiMat, _options);
+        totalPixels = labMat.Rows * labMat.Cols;
+
+        LabStatistics.LabResult? labResult;
         try
         {
-            // 提取鲁棒 Lab 统计量
-            var labResult = LabStatistics.ComputeRobustLab(labMat, validMask);
-
-            if (labResult is null || labResult.Value.ValidCount < _options.MinValidPixelCount)
-            {
-                return BuildResult(
-                    expectedColor, totalPixels, labResult?.ValidCount ?? 0,
-                    0, 0, 0, 0, true,
-                    [], DetectQuality.Insufficient, timestamp);
-            }
-
-            var lab = labResult.Value;
-
-            // 对每种颜色计算 ΔE2000，使用高斯评分函数
-            var scores = new List<ColorScore>(colorDefinitions.Count);
-            foreach (var colorDef in colorDefinitions)
-            {
-                var deltaE = DeltaE.Calculate(
-                    colorDef.RefL, colorDef.RefA, colorDef.RefB,
-                    lab.L, lab.A, lab.B);
-
-                // 椭球容差：将 L* 与 a*b* 分离建模，增强近色区分与亮度漂移鲁棒性
-                var adaptiveDistance = ComputeAdaptiveDistance(colorDef, lab.L, lab.A, lab.B);
-
-                var score = CalculateCompositeScore(
-                    deltaE,
-                    adaptiveDistance,
-                    colorDef.MaxDeltaE,
-                    lab.Dispersion,
-                    lab.IsSpatiallyConsistent);
-
-                scores.Add(new ColorScore
-                {
-                    ColorName = colorDef.ColorName,
-                    DeltaE = Math.Round(deltaE, 2),
-                    Score = Math.Round(score, 4)
-                });
-            }
-
-            // 按 ΔE 升序（得分降序）排列
-            scores.Sort((a, b) => a.DeltaE.CompareTo(b.DeltaE));
-
-            // 质量门控
-            var quality = EvaluateQuality(scores, lab.ValidCount, totalPixels, lab.IsSpatiallyConsistent);
-
-            return BuildResult(
-                expectedColor, totalPixels, lab.ValidCount,
-                lab.L, lab.A, lab.B, lab.Dispersion, lab.IsSpatiallyConsistent,
-                scores, quality, timestamp);
+            labResult = LabStatistics.ComputeRobustLab(labMat, validMask);
         }
         finally
         {
             labMat.Dispose();
             validMask.Dispose();
         }
+
+        if (labResult is null || labResult.Value.ValidCount < _options.MinValidPixelCount)
+            return BuildResult(
+                expectedColor, totalPixels, labResult?.ValidCount ?? 0,
+                0, 0, 0, 0, true,
+                [], DetectQuality.Insufficient, timestamp);
+
+        var lab = labResult.Value;
+
+        // 对所有候选颜色计算匹配分数
+        var scores = ComputeMatchScores(lab, colorDefinitions);
+
+        // 按 ΔE 升序排列
+        scores.Sort((a, b) => a.DeltaE.CompareTo(b.DeltaE));
+
+        // 质量门控
+        var quality = EvaluateQuality(scores, lab.ValidCount, totalPixels, lab.IsSpatiallyConsistent);
+
+        return BuildResult(
+            expectedColor, totalPixels, lab.ValidCount,
+            lab.L, lab.A, lab.B, lab.Dispersion, lab.IsSpatiallyConsistent,
+            scores, quality, timestamp);
+    }
+
+    /// <summary>
+    /// 对所有候选颜色计算 ΔE2000 + 自适应椭球距离 + 高斯评分。
+    /// </summary>
+    private List<ColorScore> ComputeMatchScores(
+        LabStatistics.LabResult lab,
+        IReadOnlyList<FuseColorDefinition> definitions)
+    {
+        var scores = new List<ColorScore>(definitions.Count);
+
+        foreach (var colorDef in definitions)
+        {
+            var deltaE = DeltaE.Calculate(
+                colorDef.RefL, colorDef.RefA, colorDef.RefB,
+                lab.L, lab.A, lab.B);
+
+            // 椭球容差：将 L* 与 a*b* 分离建模，增强近色区分与亮度漂移鲁棒性
+            var adaptiveDistance = ComputeAdaptiveDistance(colorDef, lab.L, lab.A, lab.B);
+
+            var score = CalculateCompositeScore(
+                deltaE,
+                adaptiveDistance,
+                colorDef.MaxDeltaE,
+                lab.Dispersion,
+                lab.IsSpatiallyConsistent);
+
+            scores.Add(new ColorScore
+            {
+                ColorName = colorDef.ColorName,
+                DeltaE = Math.Round(deltaE, 2),
+                Score = Math.Round(score, 4)
+            });
+        }
+
+        return scores;
     }
 
     /// <summary>
@@ -152,7 +168,7 @@ public class FuseColorDetector : IFuseColorDetector
     }
 
     /// <summary>
-    /// 计算融合评分：ΔE2000 + 自适应椭球距离 + 散布度/空间一致性惩罚。
+    /// 计算融合评分：ΔE2000 + 自适应椭球距离 + 空间一致性惩罚。
     /// </summary>
     private double CalculateCompositeScore(
         double deltaE,
@@ -179,14 +195,11 @@ public class FuseColorDetector : IFuseColorDetector
 
         var baseScore = Math.Exp(-0.5 * (combinedNormalized * maxDeltaE / sigma) * (combinedNormalized * maxDeltaE / sigma));
 
-        var dispersionPenaltyStrength = Math.Max(_options.DispersionPenaltyStrength, 0);
-        var dispersionPenalty = Math.Exp(-dispersionPenaltyStrength * Math.Max(0, dispersion));
-
         var spatialPenalty = isSpatiallyConsistent
             ? 1.0
             : Math.Clamp(_options.SpatialPenaltyFactor, 0, 1);
 
-        return Math.Clamp(baseScore * dispersionPenalty * spatialPenalty, 0, 1);
+        return Math.Clamp(baseScore * spatialPenalty, 0, 1);
     }
 
     /// <summary>

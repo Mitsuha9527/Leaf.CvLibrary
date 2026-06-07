@@ -4,11 +4,17 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <OutputType>Exe</OutputType>
+    <OutputType>Library</OutputType>
+    <PackageId>Leaf.ColorDetector</PackageId>
+    <Version>1.0.8</Version>
+    <Authors>Mitsuha9527</Authors>
+    <Description>汽车保险丝颜色检测库 — 基于 OpenCV + CIE ΔE2000 色差公式的工业视觉检测</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Leaf.CvLibrary" Version="1.0.8" />
+    <PackageReference Include="Leaf.CvLibrary" Version="1.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.0" />
   </ItemGroup>
 
 </Project>

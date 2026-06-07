@@ -58,14 +58,14 @@ public static class ColorCalibrator
                     $"No valid pixels found in ROI for color '{colorName}'. Check image quality or preprocessing parameters.");
 
             // 根据样本内部散布度自动推算容差下限
-            // Dispersion × 3.0 + 3.0 给出安全范围，确保同色正常变化不会误判
-            var dispersionBased = Math.Clamp(labResult.Dispersion * 3.0 + 3.0, 8.0, 25.0);
+            // Dispersion × 2.0 + 1.5 给出安全范围，确保同色正常变化不会误判
+            var dispersionBased = Math.Clamp(labResult.Dispersion * 2.0 + 1.5, 4.0, 10.0);
             var effectiveMaxDeltaE = maxDeltaE > 0
                 ? Math.Max(maxDeltaE, dispersionBased)
                 : dispersionBased;
 
-            var singleLightnessTol = Math.Clamp(effectiveMaxDeltaE * 0.8, 4.0, 20.0);
-            var singleChromaTol = Math.Clamp(effectiveMaxDeltaE * 1.05, 6.0, 25.0);
+            var singleLightnessTol = Math.Clamp(effectiveMaxDeltaE * 1.2, 3.0, 15.0);
+            var singleChromaTol = Math.Clamp(effectiveMaxDeltaE * 0.6, 4, 10.0);
 
             return new FuseColorDefinition
             {
@@ -150,9 +150,9 @@ public static class ColorCalibrator
 
         var avgDispersion = dispersions.Count > 0 ? dispersions.Average() : 0.0;
         var suggestedDeltaE = Math.Clamp(
-            Math.Max(maxInternalDeltaE * 3.0 + 3.0, avgDispersion * 3.0 + 3.0),
-            8.0,
-            25.0);
+            Math.Max(maxInternalDeltaE * 2.0 + 1.5, avgDispersion * 2.0 + 1.5),
+            4.0,
+            10.0);
 
         var lStd = StdDev(labValues.Select(v => v.L));
         var cStd = StdDev(labValues.Select(v => Math.Sqrt(v.A * v.A + v.B * v.B) - avgChroma));

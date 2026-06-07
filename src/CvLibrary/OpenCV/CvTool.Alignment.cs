@@ -1,4 +1,4 @@
-﻿using CvCommon;
+using CvCommon;
 using OpenCvSharp;
 using System;
 using System.Collections.Generic;
@@ -8,360 +8,241 @@ namespace CvLibrary.OpenCV
 {
     public static partial class CvTool
     {
-        #region Mark点检测与对齐
+        #region 对齐变换计算
 
         /// <summary>
-        /// 检测单个Mark点位置
+        /// 根据参考点集和检测点集计算对齐变换矩阵。
         /// </summary>
-        public static DetectedMark? DetectMarkPoint(
-            Mat src,
-            MarkPoint markPoint,
-            Mat? templateImage = null
-        )
+        /// <param name="referencePoints">参考点集（模板/理论坐标）。</param>
+        /// <param name="detectedPoints">检测点集（实际坐标）。</param>
+        /// <param name="type">变换类型，默认 Similarity。</param>
+        /// <returns>对齐结果。</returns>
+        public static AlignmentResult CalculateAlignment(
+            IReadOnlyList<CvPoint> referencePoints,
+            IReadOnlyList<CvPoint> detectedPoints,
+            AlignmentTransformType type = AlignmentTransformType.Similarity)
         {
-            if (src.Empty())
-                throw new ArgumentException("Source image is empty.");
-
-            Mat template;
-            
-            // 如果提供了模板图像，从模板图像中提取Mark模板
-            if (templateImage != null && !templateImage.Empty())
+            int minPoints = type switch
             {
-                template = CreateMatchTemplate(templateImage, markPoint.TemplateRect);
-            }
-            else
-            {
-                // 否则从源图像中提取（用于创建模板时）
-                template = CreateMatchTemplate(src, markPoint.TemplateRect);
-            }
-
-            try
-            {
-                // 确定搜索区域
-                Mat searchMat = src;
-                double offsetX = 0;
-                double offsetY = 0;
-
-                if (markPoint.SearchRegion.HasValue && !markPoint.SearchRegion.Value.IsEmpty)
-                {
-                    var searchRegion = markPoint.SearchRegion.Value;
-                    // 确保搜索区域在图像范围内
-                    if (searchRegion.X + searchRegion.Width <= src.Width &&
-                        searchRegion.Y + searchRegion.Height <= src.Height)
-                    {
-                        searchMat = CropImage(src, searchRegion);
-                        offsetX = searchRegion.X;
-                        offsetY = searchRegion.Y;
-                    }
-                }
-
-                // 执行模板匹配
-                var matches = MatchTemplate(
-                    searchMat,
-                    template,
-                    TemplateMatchModes.CCoeffNormed,
-                    markPoint.EnableRotation ? markPoint.RotationAngles : null,
-                    markPoint.MatchThreshold,
-                    nmsThreshold: 0.3
-                ).ToList();
-
-                if (matches.Count == 0)
-                    return null;
-
-                // 取第一个匹配结果（最高分）
-                var bestMatch = matches[0];
-
-                // 计算Mark点中心位置（考虑搜索区域偏移）
-                int centerX = (int)(bestMatch.X + template.Width / 2.0 + offsetX);
-                int centerY = (int)(bestMatch.Y + template.Height / 2.0 + offsetY);
-                var detectedPosition = new CvPoint(centerX, centerY);
-
-                return new DetectedMark
-                {
-                    MarkId = markPoint.Id,
-                    Name = markPoint.Name,
-                    DetectedPosition = detectedPosition,
-                    ReferencePosition = markPoint.ReferencePosition,
-                    MatchScore = 1.0
-                };
-            }
-            finally
-            {
-                template.Dispose();
-            }
-        }
-
-        /// <summary>
-        /// 批量检测多个Mark点
-        /// </summary>
-        public static List<DetectedMark> DetectMarkPoints(
-            Mat src,
-            List<MarkPoint> markPoints,
-            Mat? templateImage = null
-        )
-        {
-            var detectedMarks = new List<DetectedMark>();
-
-            foreach (var markPoint in markPoints)
-            {
-                var detected = DetectMarkPoint(src, markPoint, templateImage);
-                if (detected != null)
-                {
-                    detectedMarks.Add(detected);
-                }
-            }
-
-            return detectedMarks;
-        }
-
-        /// <summary>
-        /// 根据两个Mark点计算仿射变换（相似变换：平移+旋转+等比缩放）
-        /// </summary>
-        public static AlignmentResult CalculateAlignmentFromTwoPoints(
-            List<CvPoint> referencePoints,
-            List<CvPoint> detectedPoints
-        )
-        {
-            var result = new AlignmentResult();
-
-            if (referencePoints.Count < 2 || detectedPoints.Count < 2)
-            {
-                result.Success = false;
-                result.ErrorMessage = "至少需要2个Mark点进行对齐";
-                return result;
-            }
-
-            try
-            {
-                // 将CvPoint转换为Point2f
-                var srcPoints = new Point2f[]
-                {
-                    new Point2f((float)referencePoints[0].X, (float)referencePoints[0].Y),
-                    new Point2f((float)referencePoints[1].X, (float)referencePoints[1].Y)
-                };
-
-                var dstPoints = new Point2f[]
-                {
-                    new Point2f((float)detectedPoints[0].X, (float)detectedPoints[0].Y),
-                    new Point2f((float)detectedPoints[1].X, (float)detectedPoints[1].Y)
-                };
-
-                // 使用EstimateAffinePartial2D计算相似变换矩阵
-                using var srcMat = InputArray.Create(srcPoints);
-                using var dstMat = InputArray.Create(dstPoints);
-               using var transformMatrix = Cv2.EstimateAffinePartial2D(srcMat, dstMat);
-
-                if (transformMatrix == null || transformMatrix.Empty())
-                {
-                    result.Success = false;
-                    result.ErrorMessage = "无法计算仿射变换矩阵";
-                    return result;
-                }
-
-                // 提取矩阵数据 (2x3)
-                result.TransformMatrixData = new double[6];
-                for (int i = 0; i < 2; i++)
-                {
-                    for (int j = 0; j < 3; j++)
-                    {
-                        result.TransformMatrixData[i * 3 + j] = transformMatrix.At<double>(i, j);
-                    }
-                }
-
-                // 从变换矩阵中提取参数
-                double a = transformMatrix.At<double>(0, 0);
-                double b = transformMatrix.At<double>(0, 1);
-                double tx = transformMatrix.At<double>(0, 2);
-                double ty = transformMatrix.At<double>(1, 2);
-
-                // 提取缩放比例
-                result.ScaleFactor = Math.Sqrt(a * a + b * b);
-
-                // 提取旋转角度（弧度转角度）
-                result.RotationAngle = Math.Atan2(b, a) * 180.0 / Math.PI;
-
-                // 提取平移量
-                result.Translation = new CvPoint((int)Math.Round(tx), (int)Math.Round(ty));
-
-                // 计算置信度（基于点之间的距离一致性）
-                double refDistance = CalculateDistance(referencePoints[0], referencePoints[1]);
-                double detDistance = CalculateDistance(detectedPoints[0], detectedPoints[1]);
-                double distanceRatio = Math.Min(refDistance, detDistance) / Math.Max(refDistance, detDistance);
-                result.Confidence = distanceRatio;
-
-                result.Success = true;         
-            }
-            catch (Exception ex)
-            {
-                result.Success = false;
-                result.ErrorMessage = $"计算对齐变换失败: {ex.Message}";
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// 根据三个或更多Mark点计算完整仿射变换
-        /// </summary>
-        public static AlignmentResult CalculateAlignmentFromMultiplePoints(
-            List<CvPoint> referencePoints,
-            List<CvPoint> detectedPoints
-        )
-        {
-            var result = new AlignmentResult();
-
-            if (referencePoints.Count < 3 || detectedPoints.Count < 3)
-            {
-                result.Success = false;
-                result.ErrorMessage = "至少需要3个Mark点进行完整仿射变换";
-                return result;
-            }
-
-            try
-            {
-                // 将CvPoint转换为Point2f
-                var srcPoints = referencePoints
-                    .Take(3)
-                    .Select(p => new Point2f((float)p.X, (float)p.Y))
-                    .ToArray();
-
-                var dstPoints = detectedPoints
-                    .Take(3)
-                    .Select(p => new Point2f((float)p.X, (float)p.Y))
-                    .ToArray();
-
-                // 使用GetAffineTransform计算完整仿射变换矩阵
-                var transformMatrix = Cv2.GetAffineTransform(srcPoints, dstPoints);
-
-                if (transformMatrix == null || transformMatrix.Empty())
-                {
-                    result.Success = false;
-                    result.ErrorMessage = "无法计算仿射变换矩阵";
-                    return result;
-                }
-
-                // 提取矩阵数据
-                result.TransformMatrixData = new double[6];
-                for (int i = 0; i < 2; i++)
-                {
-                    for (int j = 0; j < 3; j++)
-                    {
-                        result.TransformMatrixData[i * 3 + j] = transformMatrix.At<double>(i, j);
-                    }
-                }
-
-                // 提取参数（简化版）
-                double tx = transformMatrix.At<double>(0, 2);
-                double ty = transformMatrix.At<double>(1, 2);
-                result.Translation = new CvPoint((int)Math.Round(tx), (int)Math.Round(ty));
-
-                // 计算平均置信度
-                result.Confidence = 0.95;
-
-                result.Success = true;
-
-                transformMatrix.Dispose();
-            }
-            catch (Exception ex)
-            {
-                result.Success = false;
-                result.ErrorMessage = $"计算对齐变换失败: {ex.Message}";
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// 使用仿射变换矩阵变换矩形区域
-        /// </summary>
-        public static CvRect TransformRect(CvRect rect, double[] transformMatrixData)
-        {
-            if (transformMatrixData == null || transformMatrixData.Length != 6)
-                return rect;
-
-            // 重建Mat对象
-            using var transformMatrix = new Mat(2, 3, MatType.CV_64F);
-            for (int i = 0; i < 2; i++)
-            {
-                for (int j = 0; j < 3; j++)
-                {
-                    transformMatrix.Set(i, j, transformMatrixData[i * 3 + j]);
-                }
-            }
-
-            // 获取矩形的四个角点
-            var corners = new Point2f[]
-            {
-                new Point2f((float)rect.X, (float)rect.Y),
-                new Point2f((float)(rect.X + rect.Width), (float)rect.Y),
-                new Point2f((float)(rect.X + rect.Width), (float)(rect.Y + rect.Height)),
-                new Point2f((float)rect.X, (float)(rect.Y + rect.Height))
+                AlignmentTransformType.Similarity => 2,
+                AlignmentTransformType.Affine => 3,
+                AlignmentTransformType.Perspective => 4,
+                _ => 2,
             };
 
-            // 变换所有角点
-            var transformedCorners = new Point2f[4];
-            for (int i = 0; i < 4; i++)
-            {
-                transformedCorners[i] = TransformPoint(corners[i], transformMatrix);
-            }
+            if (referencePoints == null || detectedPoints == null)
+                return AlignmentResult.Failed("Reference or detected points are null.");
 
-            // 计算变换后的包围矩形
-            int minX = (int)Math.Round(transformedCorners.Min(p => p.X));
-            int minY = (int)Math.Round(transformedCorners.Min(p => p.Y));
-            int maxX = (int)Math.Round(transformedCorners.Max(p => p.X));
-            int maxY = (int)Math.Round(transformedCorners.Max(p => p.Y));
+            if (referencePoints.Count < minPoints || detectedPoints.Count < minPoints)
+                return AlignmentResult.Failed(
+                    $"需要至少 {minPoints} 个点对进行 {type} 变换，当前参考点 {referencePoints.Count}，检测点 {detectedPoints.Count}。");
+
+            if (referencePoints.Count != detectedPoints.Count)
+                return AlignmentResult.Failed(
+                    $"参考点数量 ({referencePoints.Count}) 与检测点数量 ({detectedPoints.Count}) 不一致。");
+
+            try
+            {
+                var srcPts = referencePoints
+                    .Select(p => new Point2f((float)p.X, (float)p.Y))
+                    .ToArray();
+                var dstPts = detectedPoints
+                    .Select(p => new Point2f((float)p.X, (float)p.Y))
+                    .ToArray();
+
+                Mat? resultMatrix = null;
+                double[] matrixData;
+
+                switch (type)
+                {
+                    case AlignmentTransformType.Similarity:
+                        resultMatrix = Cv2.EstimateAffinePartial2D(
+                            InputArray.Create(srcPts), InputArray.Create(dstPts));
+                        if (resultMatrix == null || resultMatrix.Empty())
+                            return AlignmentResult.Failed("无法计算相似变换矩阵。");
+                        matrixData = To3x3(resultMatrix);
+                        break;
+
+                    case AlignmentTransformType.Affine:
+                        resultMatrix = Cv2.EstimateAffine2D(
+                            InputArray.Create(srcPts), InputArray.Create(dstPts));
+                        if (resultMatrix == null || resultMatrix.Empty())
+                            return AlignmentResult.Failed("无法计算仿射变换矩阵。");
+                        matrixData = To3x3(resultMatrix);
+                        break;
+
+                    case AlignmentTransformType.Perspective:
+                        resultMatrix = Cv2.FindHomography(
+                            InputArray.Create(srcPts), InputArray.Create(dstPts),
+                            HomographyMethods.Ransac);
+                        if (resultMatrix == null || resultMatrix.Empty())
+                            return AlignmentResult.Failed("无法计算透视变换矩阵。");
+                        matrixData = Extract3x3(resultMatrix);
+                        break;
+
+                    default:
+                        return AlignmentResult.Failed($"不支持的变换类型: {type}");
+                }
+
+                // 计算置信度（最小二乘残差）
+                double confidence = CalculateConfidence(referencePoints, detectedPoints,
+                    matrixData, type);
+
+                return new AlignmentResult
+                {
+                    Success = true,
+                    TransformMatrix = matrixData,
+                    TransformType = type,
+                    Confidence = confidence,
+                };
+            }
+            catch (Exception ex)
+            {
+                return AlignmentResult.Failed($"计算对齐变换失败: {ex.Message}");
+            }
+        }
+
+        #endregion
+
+        #region 变换应用
+
+        /// <summary>
+        /// 使用 3×3 变换矩阵变换矩形区域，返回轴对齐包围盒。
+        /// </summary>
+        /// <param name="rect">待变换矩形。</param>
+        /// <param name="transformMatrix">3×3 齐次变换矩阵（9 元素，行优先）。</param>
+        /// <returns>变换后的轴对齐包围盒。</returns>
+        public static CvRect TransformRect(CvRect rect, double[] transformMatrix)
+        {
+            if (transformMatrix == null || transformMatrix.Length != 9)
+                return rect;
+
+            var corners = new Point2f[]
+            {
+                new((float)rect.Left,     (float)rect.Top),
+                new((float)rect.Right,    (float)rect.Top),
+                new((float)rect.Right,    (float)rect.Bottom),
+                new((float)rect.Left,     (float)rect.Bottom),
+            };
+
+            var transformed = corners.Select(c => ApplyTransform(c, transformMatrix)).ToArray();
+
+            double minX = transformed.Min(p => p.X);
+            double minY = transformed.Min(p => p.Y);
+            double maxX = transformed.Max(p => p.X);
+            double maxY = transformed.Max(p => p.Y);
 
             return new CvRect(minX, minY, maxX - minX, maxY - minY);
         }
 
         /// <summary>
-        /// 使用仿射变换矩阵变换点
+        /// 使用 3×3 变换矩阵变换点。
         /// </summary>
-        public static CvPoint TransformPoint(CvPoint point, double[] transformMatrixData)
+        /// <param name="point">待变换点。</param>
+        /// <param name="transformMatrix">3×3 齐次变换矩阵（9 元素，行优先）。</param>
+        /// <returns>变换后的点。</returns>
+        public static CvPoint TransformPoint(CvPoint point, double[] transformMatrix)
         {
-            if (transformMatrixData == null || transformMatrixData.Length != 6)
+            if (transformMatrix == null || transformMatrix.Length != 9)
                 return point;
 
-            using var transformMatrix = new Mat(2, 3, MatType.CV_64F);
-            for (int i = 0; i < 2; i++)
-            {
-                for (int j = 0; j < 3; j++)
-                {
-                    transformMatrix.Set(i, j, transformMatrixData[i * 3 + j]);
-                }
-            }
-
             var pt = new Point2f((float)point.X, (float)point.Y);
-            var transformed = TransformPoint(pt, transformMatrix);
-            return new CvPoint((int)Math.Round(transformed.X), (int)Math.Round(transformed.Y));
+            var result = ApplyTransform(pt, transformMatrix);
+            return new CvPoint(result.X, result.Y);
         }
 
         /// <summary>
-        /// 使用仿射变换矩阵变换Point2f点
+        /// 应用 3×3 齐次变换矩阵到 Point2f。
         /// </summary>
-        private static Point2f TransformPoint(Point2f point, Mat transformMatrix)
+        private static Point2f ApplyTransform(Point2f p, double[] m)
         {
-            double a = transformMatrix.At<double>(0, 0);
-            double b = transformMatrix.At<double>(0, 1);
-            double c = transformMatrix.At<double>(1, 0);
-            double d = transformMatrix.At<double>(1, 1);
-            double tx = transformMatrix.At<double>(0, 2);
-            double ty = transformMatrix.At<double>(1, 2);
+            // m[0..8] = 3×3 row-major
+            //      [m0 m1 m2]   [x]
+            // P' = [m3 m4 m5] × [y]
+            //      [m6 m7 m8]   [1]
+            double w = m[6] * p.X + m[7] * p.Y + m[8];
+            if (Math.Abs(w) < 1e-10) w = 1.0;
 
-            float newX = (float)(a * point.X + b * point.Y + tx);
-            float newY = (float)(c * point.X + d * point.Y + ty);
+            double x = (m[0] * p.X + m[1] * p.Y + m[2]) / w;
+            double y = (m[3] * p.X + m[4] * p.Y + m[5]) / w;
 
-            return new Point2f(newX, newY);
+            return new Point2f((float)x, (float)y);
         }
 
+        #endregion
+
+        #region 辅助计算
+
         /// <summary>
-        /// 计算两点之间的欧氏距离
+        /// 计算两点之间的欧氏距离。
         /// </summary>
         private static double CalculateDistance(CvPoint p1, CvPoint p2)
         {
             double dx = p2.X - p1.X;
             double dy = p2.Y - p1.Y;
             return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>
+        /// 将 OpenCV 的 2×3 矩阵转换为 3×3 齐次矩阵。
+        /// </summary>
+        private static double[] To3x3(Mat matrix2x3)
+        {
+            var m = new double[9];
+            // 行 0
+            m[0] = matrix2x3.At<double>(0, 0);
+            m[1] = matrix2x3.At<double>(0, 1);
+            m[2] = matrix2x3.At<double>(0, 2);
+            // 行 1
+            m[3] = matrix2x3.At<double>(1, 0);
+            m[4] = matrix2x3.At<double>(1, 1);
+            m[5] = matrix2x3.At<double>(1, 2);
+            // 行 2 — 补齐
+            m[6] = 0;
+            m[7] = 0;
+            m[8] = 1;
+
+            matrix2x3.Dispose();
+            return m;
+        }
+
+        /// <summary>
+        /// 从 OpenCV 3×3 矩阵提取数据。
+        /// </summary>
+        private static double[] Extract3x3(Mat matrix3x3)
+        {
+            var m = new double[9];
+            for (int i = 0; i < 3; i++)
+                for (int j = 0; j < 3; j++)
+                    m[i * 3 + j] = matrix3x3.At<double>(i, j);
+
+            matrix3x3.Dispose();
+            return m;
+        }
+
+        /// <summary>
+        /// 从最小二乘拟合残差计算置信度。
+        /// </summary>
+        private static double CalculateConfidence(
+            IReadOnlyList<CvPoint> refPts,
+            IReadOnlyList<CvPoint> detPts,
+            double[] matrix,
+            AlignmentTransformType type)
+        {
+            if (refPts.Count == 0) return 0;
+
+            double totalError = 0;
+            for (int i = 0; i < refPts.Count; i++)
+            {
+                var predicted = ApplyTransform(
+                    new Point2f((float)refPts[i].X, (float)refPts[i].Y), matrix);
+                double dx = predicted.X - detPts[i].X;
+                double dy = predicted.Y - detPts[i].Y;
+                totalError += Math.Sqrt(dx * dx + dy * dy);
+            }
+
+            double avgError = totalError / refPts.Count;
+            return Math.Exp(-avgError / 2.0);  // 映射到 (0, 1]
         }
 
         #endregion

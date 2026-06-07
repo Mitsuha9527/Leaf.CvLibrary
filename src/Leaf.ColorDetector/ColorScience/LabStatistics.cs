@@ -11,19 +11,6 @@ namespace Leaf.ColorDetector.ColorScience;
 /// </summary>
 internal static class LabStatistics
 {
-    internal sealed class LabStatisticsDebugResult : IDisposable
-    {
-        public required Mat Step1InitialValidMask { get; init; }
-        public required Mat Step2MadInlierMask { get; init; }
-        public LabResult? Result { get; init; }
-
-        public void Dispose()
-        {
-            Step1InitialValidMask.Dispose();
-            Step2MadInlierMask.Dispose();
-        }
-    }
-
     /// <summary>
     /// Lab 统计量结果。
     /// </summary>
@@ -46,15 +33,6 @@ internal static class LabStatistics
     /// <returns>统计量结果；像素不足时返回 null</returns>
     public static LabResult? ComputeRobustLab(Mat labMat, Mat validMask)
     {
-        using var debug = ComputeRobustLabWithDebug(labMat, validMask);
-        return debug.Result;
-    }
-
-    internal static LabStatisticsDebugResult ComputeRobustLabWithDebug(Mat labMat, Mat validMask)
-    {
-        var step1Mask = validMask.Clone();
-
-        // 1. 提取有效像素的 Lab 值
         var indexer = labMat.GetGenericIndexer<Vec3b>();
         var maskIndexer = validMask.GetGenericIndexer<byte>();
 
@@ -84,73 +62,43 @@ internal static class LabStatistics
         }
 
         if (lValues.Count == 0)
-        {
-            return new LabStatisticsDebugResult
-            {
-                Step1InitialValidMask = step1Mask,
-                Step2MadInlierMask = new Mat(validMask.Rows, validMask.Cols, MatType.CV_8UC1, Scalar.All(0)),
-                Result = null
-            };
-        }
+            return null;
 
-        // 2. MAD 离群值剔除：基于 a* 和 b* 的联合色度距离
-        var (filteredL, filteredA, filteredB, keptIndices) =
+        // MAD 离群值剔除：基于 a* 和 b* 的联合色度距离
+        var (filteredL, filteredA, filteredB) =
             RemoveOutliersByMad(lValues, aValues, bValues);
 
-        var step2Mask = new Mat(validMask.Rows, validMask.Cols, MatType.CV_8UC1, Scalar.All(0));
-        var step2MaskIndexer = step2Mask.GetGenericIndexer<byte>();
-        foreach (var idx in keptIndices)
-        {
-            var (yy, xx) = positions[idx];
-            step2MaskIndexer[yy, xx] = 255;
-        }
-
         if (filteredL.Length == 0)
-        {
-            return new LabStatisticsDebugResult
-            {
-                Step1InitialValidMask = step1Mask,
-                Step2MadInlierMask = step2Mask,
-                Result = null
-            };
-        }
+            return null;
 
-        // 3. 鲁棒统计量
+        // 鲁棒统计量
         var lResult = TrimmedMean(filteredL, 0.10);
         var aResult = Median(filteredA);
         var bResult = Median(filteredB);
 
-        // 4. 内部散布度（inlier 像素的平均色差，越小表示颜色越均匀）
+        // 内部散布度（inlier 像素的平均色差，越小表示颜色越均匀）
         var dispersion = ComputeDispersion(filteredL, filteredA, filteredB, lResult, aResult, bResult);
 
-        // 5. 空间一致性检查
+        // 空间一致性检查
         var isSpatiallyConsistent = CheckSpatialConsistency(
             labMat, validMask, positions, labMat.Rows, labMat.Cols);
 
-        var result = new LabResult(lResult, aResult, bResult, filteredL.Length, dispersion, isSpatiallyConsistent);
-        return new LabStatisticsDebugResult
-        {
-            Step1InitialValidMask = step1Mask,
-            Step2MadInlierMask = step2Mask,
-            Result = result
-        };
+        return new LabResult(lResult, aResult, bResult, filteredL.Length, dispersion, isSpatiallyConsistent);
     }
 
     /// <summary>
     /// 基于 MAD（中位绝对偏差）剔除色度空间中的离群像素。
     /// <para>
     /// 计算每个像素与中位色的色度距离，距离 > 3.5 × MAD_normalized 的像素被剔除。
-    /// 与 FuseDetector.GetDepthValueByMad 的思路一致。
     /// </para>
     /// </summary>
-    private static (double[] L, double[] A, double[] B, int[] KeptIndices) RemoveOutliersByMad(
+    private static (double[] L, double[] A, double[] B) RemoveOutliersByMad(
         List<double> lValues, List<double> aValues, List<double> bValues)
     {
         var count = lValues.Count;
         if (count < 5) // 样本太少，不剔除
-            return ([.. lValues], [.. aValues], [.. bValues], Enumerable.Range(0, count).ToArray());
+            return ([.. lValues], [.. aValues], [.. bValues]);
 
-        // 中位数
         var lArr = lValues.ToArray();
         var aArr = aValues.ToArray();
         var bArr = bValues.ToArray();
@@ -181,8 +129,8 @@ internal static class LabStatistics
         var mad = absDevs[count / 2];
 
         // MAD 极小（颜色非常均匀），不需要剔除
-        if (mad < 0.5)
-            return (lArr, aArr, bArr, Enumerable.Range(0, count).ToArray());
+        if (mad < 1.5)
+            return (lArr, aArr, bArr);
 
         // 阈值 = 3.5 × 1.4826 × MAD（与正态分布的 3.5σ 等价）
         var threshold = 3.5 * 1.4826 * mad;
@@ -190,7 +138,6 @@ internal static class LabStatistics
         var resultL = new List<double>(count);
         var resultA = new List<double>(count);
         var resultB = new List<double>(count);
-        var keptIndices = new List<int>(count);
 
         for (var i = 0; i < count; i++)
         {
@@ -199,14 +146,13 @@ internal static class LabStatistics
                 resultL.Add(lArr[i]);
                 resultA.Add(aArr[i]);
                 resultB.Add(bArr[i]);
-                keptIndices.Add(i);
             }
         }
 
         if (resultL.Count == 0)
-            return (lArr, aArr, bArr, Enumerable.Range(0, count).ToArray()); // 回退：全部保留
+            return (lArr, aArr, bArr); // 回退：全部保留
 
-        return ([.. resultL], [.. resultA], [.. resultB], [.. keptIndices]);
+        return ([.. resultL], [.. resultA], [.. resultB]);
     }
 
     /// <summary>

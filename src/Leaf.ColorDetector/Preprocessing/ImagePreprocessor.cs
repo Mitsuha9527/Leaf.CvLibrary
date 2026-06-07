@@ -1,3 +1,4 @@
+using Leaf.ColorDetector.ColorScience;
 using Leaf.ColorDetector.Models;
 using OpenCvSharp;
 
@@ -7,30 +8,12 @@ namespace Leaf.ColorDetector.Preprocessing;
 /// 图像预处理工具。
 /// <para>
 /// 输出 Lab 色彩空间图像和有效像素掩码。
-/// HSV 仅在内部用于阴影检测，高光检测改为联合 Lab 验证以避免误杀白色保险丝。
+/// HSV 仅在内部用于低亮度不可靠像素剔除，灰黑色系（消色）像素通过
+/// <see cref="AchromaticFilter.IsAchromatic"/> 豁免，不参与低亮度过滤。
 /// </para>
 /// </summary>
-internal static class ImagePreprocessor
+public static class ImagePreprocessor
 {
-    internal sealed class PreprocessDebugResult : IDisposable
-    {
-        public required Mat CroppedBgr { get; init; }
-        public required Mat BlurredBgr { get; init; }
-        public required Mat LabMat { get; init; }
-        public required Mat HsvMat { get; init; }
-        public required Mat ValidMask { get; init; }
-        public required Rect CropRectInOriginal { get; init; }
-
-        public void Dispose()
-        {
-            CroppedBgr.Dispose();
-            BlurredBgr.Dispose();
-            LabMat.Dispose();
-            HsvMat.Dispose();
-            ValidMask.Dispose();
-        }
-    }
-
     /// <summary>
     /// 对 ROI 图像执行预处理流程：中心裁剪 → 高斯模糊 → 转 Lab → 生成掩码。
     /// </summary>
@@ -39,23 +22,18 @@ internal static class ImagePreprocessor
     /// <returns>Lab 图像和有效像素掩码（调用方负责 Dispose）</returns>
     public static (Mat LabMat, Mat ValidMask) Preprocess(Mat roiBgr, ColorDetectorOptions options)
     {
-        using var debug = PreprocessWithDebug(roiBgr, options);
-        return (debug.LabMat.Clone(), debug.ValidMask.Clone());
-    }
+        var (cropped, _) = CropCenter(roiBgr, options.CenterCropRatio);
 
-    internal static PreprocessDebugResult PreprocessWithDebug(Mat roiBgr, ColorDetectorOptions options)
-    {
-        var (cropped, cropRect) = CropCenter(roiBgr, options.CenterCropRatio);
-
-        var blurred = new Mat();
+        Mat blurred;
         if (options.GaussianKernelSize >= 3)
         {
             var kSize = options.GaussianKernelSize | 1;
+            blurred = new Mat();
             Cv2.GaussianBlur(cropped, blurred, new Size(kSize, kSize), 0);
         }
         else
         {
-            cropped.CopyTo(blurred);
+            blurred = cropped.Clone();
         }
 
         var labMat = new Mat();
@@ -64,20 +42,16 @@ internal static class ImagePreprocessor
         if (options.EnableLightnessNormalization)
             NormalizeLabLightness(labMat, options);
 
-        var hsvMat = new Mat();
+        using var hsvMat = new Mat();
         Cv2.CvtColor(blurred, hsvMat, ColorConversionCodes.BGR2HSV);
 
         var validMask = BuildValidPixelMask(hsvMat, labMat, options);
 
-        return new PreprocessDebugResult
-        {
-            CroppedBgr = cropped,
-            BlurredBgr = blurred,
-            LabMat = labMat,
-            HsvMat = hsvMat,
-            ValidMask = validMask,
-            CropRectInOriginal = cropRect
-        };
+        // cropped 只在模糊前有用，用完释放
+        cropped.Dispose();
+        blurred.Dispose();
+
+        return (labMat, validMask);
     }
 
     private static (Mat Cropped, Rect CropRect) CropCenter(Mat roiBgr, double centerCropRatio)
@@ -98,12 +72,10 @@ internal static class ImagePreprocessor
     }
 
     /// <summary>
-    /// 构建有效像素掩码：排除镜面高光反射和深度阴影区域。
+    /// 构建有效像素掩码：排除非消色的低亮度不可靠像素。
     /// <para>
-    /// 高光判定采用联合策略：HSV 候选高光 + Lab 验证。
-    /// 真正的镜面反光在 Lab 中表现为 L*≈100 且 a*≈0, b*≈0（无色彩偏向），
-    /// 而白色保险丝虽然 L* 高，但通常带有轻微色彩偏向（a* 或 b* 有偏移）。
-    /// 这避免了白色/浅色保险丝被误判为高光的问题。
+    /// 灰黑色系（消色）像素通过 <see cref="AchromaticFilter.IsAchromatic"/> 检测后直接豁免。
+    /// 非消色像素若 V 低于 <see cref="ColorDetectorOptions.MinValidLightnessV"/> 则视为色彩信息不可靠而排除。
     /// </para>
     /// </summary>
     private static Mat BuildValidPixelMask(Mat hsvMat, Mat labMat, ColorDetectorOptions options)
@@ -118,40 +90,20 @@ internal static class ImagePreprocessor
         {
             for (var x = 0; x < hsvMat.Cols; x++)
             {
+                // 消色豁免：灰黑色系像素始终保留
+                var lab = labIndexer[y, x];
+                var a = lab.Item1 - 128.0;
+                var b = lab.Item2 - 128.0;
+                if (AchromaticFilter.IsAchromatic(a, b, options))
+                    continue;
+
                 var hsv = hsvIndexer[y, x];
                 var v = hsv.Item2;
-                var s = hsv.Item1;
 
-                // 阴影：V 极低 → 色彩信息不可靠
-                if (v <= options.ShadowValueMax)
+                // 低亮度：V 极低 → 非消色像素色彩信息不可靠
+                if (v <= options.MinValidLightnessV)
                 {
                     maskIndexer[y, x] = 0;
-                    continue;
-                }
-
-                // 死像素：V = 0
-                if (v == 0)
-                {
-                    maskIndexer[y, x] = 0;
-                    continue;
-                }
-
-                // 高光候选：HSV 空间 V 高 + S 低
-                if (v >= options.HighlightValueMin && s <= options.HighlightSaturationMax)
-                {
-                    // Lab 验证：真正的镜面反光 a*≈0, b*≈0（中性色）
-                    // 白色保险丝虽然 L* 高，但 a*, b* 通常有轻微偏移
-                    var lab = labIndexer[y, x];
-                    var a = lab.Item1 - 128.0; // 转标准范围
-                    var b = lab.Item2 - 128.0;
-                    var chroma = Math.Sqrt(a * a + b * b);
-
-                    // 色度极低（< 5）= 真正的无色高光 → 排除
-                    // 色度较高 = 白色/浅色保险丝 → 保留
-                    if (chroma < 5.0)
-                    {
-                        maskIndexer[y, x] = 0;
-                    }
                 }
             }
         }

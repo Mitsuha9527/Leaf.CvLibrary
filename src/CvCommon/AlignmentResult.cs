@@ -1,93 +1,95 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 
 namespace CvCommon
 {
     /// <summary>
-    /// Mark点对齐结果
+    /// 对齐变换结果。
     /// </summary>
     public class AlignmentResult
     {
         /// <summary>
-        /// 对齐是否成功
+        /// 对齐是否成功。
         /// </summary>
         public bool Success { get; set; }
 
         /// <summary>
-        /// 失败原因
+        /// 失败时的错误消息。
         /// </summary>
         public string ErrorMessage { get; set; } = string.Empty;
 
         /// <summary>
-        /// 仿射变换矩阵数据 (2x3 矩阵，以行优先顺序存储)
-        /// [a, b, tx]
-        /// [c, d, ty]
-        /// 存储为: [a, b, tx, c, d, ty]
+        /// 3×3 齐次变换矩阵（行优先存储，共 9 个元素）。
+        /// 对于 Similarity / Affine（2×3）：补齐第三行 [0, 0, 1]。
+        /// 对于 Perspective（3×3）：直接存储。
         /// </summary>
-        public double[] TransformMatrixData { get; set; } = Array.Empty<double>();
+        public double[] TransformMatrix { get; set; } = new double[9];
 
         /// <summary>
-        /// 检测到的Mark点位置
+        /// 变换类型。
         /// </summary>
-        public List<DetectedMark> DetectedMarks { get; set; } = new List<DetectedMark>();
+        public AlignmentTransformType TransformType { get; set; }
 
         /// <summary>
-        /// 旋转角度（度）
+        /// 旋转角度（度）。仅 Similarity 类型有值，其余返回 null。
         /// </summary>
-        public double RotationAngle { get; set; }
+        public double? RotationAngle
+        {
+            get
+            {
+                if (TransformType != AlignmentTransformType.Similarity)
+                    return null;
+
+                double a = TransformMatrix[0];
+                double b = TransformMatrix[1];
+                return Math.Atan2(b, a) * 180.0 / Math.PI;
+            }
+        }
 
         /// <summary>
-        /// 平移量 (X, Y)
+        /// 平移量。仅 Similarity / Affine 类型有值，Perspective 返回 null。
         /// </summary>
-        public CvPoint Translation { get; set; }
+        public CvPoint? Translation
+        {
+            get
+            {
+                if (TransformType == AlignmentTransformType.Perspective)
+                    return null;
+
+                return new CvPoint(TransformMatrix[2], TransformMatrix[5]);
+            }
+        }
 
         /// <summary>
-        /// 缩放比例
+        /// 缩放比例。仅 Similarity 类型有值，其余返回 null。
         /// </summary>
-        public double ScaleFactor { get; set; } = 1.0;
+        public double? ScaleFactor
+        {
+            get
+            {
+                if (TransformType != AlignmentTransformType.Similarity)
+                    return null;
+
+                double a = TransformMatrix[0];
+                double b = TransformMatrix[1];
+                return Math.Sqrt(a * a + b * b);
+            }
+        }
 
         /// <summary>
-        /// 对齐置信度 (0.0 - 1.0)
+        /// 对齐置信度（0.0 ~ 1.0）。由最小二乘拟合残差计算得到。
         /// </summary>
         public double Confidence { get; set; }
-    }
-
-    /// <summary>
-    /// 检测到的Mark点信息
-    /// </summary>
-    public class DetectedMark
-    {
-        /// <summary>
-        /// 对应的Mark点ID
-        /// </summary>
-        public System.Guid MarkId { get; set; }
 
         /// <summary>
-        /// Mark点名称
+        /// 创建一个失败结果。
         /// </summary>
-        public string Name { get; set; } = string.Empty;
-
-        /// <summary>
-        /// 检测到的位置（实际坐标）
-        /// </summary>
-        public CvPoint DetectedPosition { get; set; }
-
-        /// <summary>
-        /// 参考位置（理论坐标）
-        /// </summary>
-        public CvPoint ReferencePosition { get; set; }
-
-        /// <summary>
-        /// 匹配得分 (0.0 - 1.0)
-        /// </summary>
-        public double MatchScore { get; set; }
-
-        /// <summary>
-        /// 位置偏差
-        /// </summary>
-        public CvPoint Deviation => new CvPoint(
-            DetectedPosition.X - ReferencePosition.X,
-            DetectedPosition.Y - ReferencePosition.Y
-        );
+        public static AlignmentResult Failed(string message)
+        {
+            return new AlignmentResult
+            {
+                Success = false,
+                ErrorMessage = message,
+            };
+        }
     }
 }

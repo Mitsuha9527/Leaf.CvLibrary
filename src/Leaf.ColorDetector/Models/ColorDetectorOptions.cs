@@ -1,4 +1,4 @@
-namespace Leaf.ColorDetector.Models;
+﻿namespace Leaf.ColorDetector.Models;
 
 /// <summary>
 /// 颜色检测器的配置参数。
@@ -49,19 +49,10 @@ public class ColorDetectorOptions
     // ===== 像素掩码参数（HSV 仅用于此处，不参与颜色判定） =====
 
     /// <summary>
-    /// 高光判定：明度上限。V &gt; 此值的像素可能是镜面反光。
+    /// 非消色像素的最低有效亮度阈值（HSV V 通道）。
+    /// V &lt; 此值的非消色像素视为色彩信息不可靠而排除；消色系（灰/黑）像素不受此限制。
     /// </summary>
-    public int HighlightValueMin { get; set; } = 240;
-
-    /// <summary>
-    /// 高光判定：饱和度上限。V &gt; HighlightValueMin 且 S &lt; 此值的像素判定为高光。
-    /// </summary>
-    public int HighlightSaturationMax { get; set; } = 40;
-
-    /// <summary>
-    /// 阴影判定：明度下限。V &lt; 此值的像素判定为过暗/阴影。
-    /// </summary>
-    public int ShadowValueMax { get; set; } = 30;
+    public int MinValidLightnessV { get; set; } = 30;
 
     // ===== 质量门控参数 =====
 
@@ -86,7 +77,7 @@ public class ColorDetectorOptions
     /// <summary>
     /// 高斯评分宽度因子（sigma = MaxDeltaE / 此值）。值越大，评分衰减越快。
     /// </summary>
-    public double ScoreSigmaFactor { get; set; } = 2.5;
+    public double ScoreSigmaFactor { get; set; } = 1.5;
 
     /// <summary>
     /// 自适应椭球容差在最终评分中的权重 (0~1)。
@@ -95,12 +86,15 @@ public class ColorDetectorOptions
     public double AdaptiveToleranceWeight { get; set; } = 0.35;
 
     /// <summary>
-    /// 颜色内部散布度惩罚系数。值越大，对不均匀区域降分越强。
-    /// </summary>
-    public double DispersionPenaltyStrength { get; set; } = 0.06;
-
-    /// <summary>
     /// 空间不一致时的评分惩罚系数 (0~1)。
     /// </summary>
     public double SpatialPenaltyFactor { get; set; } = 0.7;
+
+    // ===== 灰黑色掩码豁免参数 =====
+
+    /// <summary>
+    /// 灰黑色中性判定：a* 和 b* 的绝对值上限。
+    /// |a*| &lt; 此值且 |b*| &lt; 此值时判定为灰黑系中性色，在掩码阶段豁免低亮度过滤。
+    /// </summary>
+    public double AchromaticABThreshold { get; set; } = 3.0;
 }

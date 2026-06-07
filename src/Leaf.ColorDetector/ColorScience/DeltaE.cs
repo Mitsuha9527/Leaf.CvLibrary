@@ -1,4 +1,4 @@
-namespace Leaf.ColorDetector.ColorScience;
+﻿namespace Leaf.ColorDetector.ColorScience;
 
 /// <summary>
 /// CIE ΔE2000 色差计算。
@@ -10,7 +10,7 @@ namespace Leaf.ColorDetector.ColorScience;
 /// 输入为标准 CIELab 值：L* ∈ [0,100]，a* ∈ [-128,127]，b* ∈ [-128,127]。
 /// </para>
 /// </summary>
-internal static class DeltaE
+public static class DeltaE
 {
     private const double Deg2Rad = Math.PI / 180.0;
     private const double Rad2Deg = 180.0 / Math.PI;
