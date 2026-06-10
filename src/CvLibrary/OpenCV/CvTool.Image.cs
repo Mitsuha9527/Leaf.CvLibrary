@@ -15,7 +15,7 @@ namespace CvLibrary.OpenCV
 
         public static Mat ReadImage(string path)
         {
-            Mat mat = Cv2.ImRead(path, ImreadModes.AnyColor|ImreadModes.AnyDepth);
+            Mat mat = Cv2.ImRead(path, ImreadModes.AnyColor | ImreadModes.AnyDepth);
             return mat;
         }
 
@@ -150,8 +150,12 @@ namespace CvLibrary.OpenCV
         /// 旋转图像（统一使用 WarpAffine，所有角度走同一路径，保证包围盒尺寸连续性）。
         /// 填充区域使用灰色（128），避免黑色边框造成的零方差问题。
         /// </summary>
-        public static Mat RotateImage(Mat mat, double angle)
+        public static Mat RotateImage(Mat mat, double angle, bool isClockwise = true)
         {
+            if (isClockwise)
+            {
+                angle = -angle;
+            }
             // 归一化角度到 [0, 360)
             angle = ((angle % 360) + 360) % 360;
             if (Math.Abs(angle) < 1e-6)
@@ -165,11 +169,22 @@ namespace CvLibrary.OpenCV
 
             // 调整平移量，防止图像被裁剪
             rotationMatrix.Set(0, 2, rotationMatrix.At<double>(0, 2) + bbox.Width / 2.0 - center.X);
-            rotationMatrix.Set(1, 2, rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y);
+            rotationMatrix.Set(
+                1,
+                2,
+                rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y
+            );
 
             Mat rotated = new();
-            Cv2.WarpAffine(mat, rotated, rotationMatrix, bbox.Size,
-                InterpolationFlags.Cubic, BorderTypes.Constant, Scalar.All(128));
+            Cv2.WarpAffine(
+                mat,
+                rotated,
+                rotationMatrix,
+                bbox.Size,
+                InterpolationFlags.Cubic,
+                BorderTypes.Constant,
+                Scalar.All(128)
+            );
 
             return rotated;
         }
