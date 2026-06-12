@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using CvCommon;
 using CvLibrary.OpenCV;
 using CvLibrary.OpenCV.Match;
@@ -168,7 +168,7 @@ public class BatchTest
             foreach (double trueAngle in testAngles)
             {
                 total++;
-                using var rotated = CvTool.RotateImage(baseImage, trueAngle);
+                using var rotated = CvTool.RotateMat(baseImage, trueAngle);
                 using var display = rotated.Clone();
 
                 // Ground truth position

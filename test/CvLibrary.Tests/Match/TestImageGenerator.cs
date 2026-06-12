@@ -1,4 +1,4 @@
-using OpenCvSharp;
+﻿using OpenCvSharp;
 
 namespace CvLibrary.Tests.Match
 {
@@ -64,7 +64,7 @@ namespace CvLibrary.Tests.Match
         /// </summary>
         private static Mat RotateTemplate(Mat template, double angle)
         {
-            return CvLibrary.OpenCV.CvTool.RotateImage(template, angle);
+            return CvLibrary.OpenCV.CvTool.RotateMat(template, angle);
         }
 
         /// <summary>

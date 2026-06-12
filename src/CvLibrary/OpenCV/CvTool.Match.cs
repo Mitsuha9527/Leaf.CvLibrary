@@ -72,7 +72,7 @@ namespace CvLibrary.OpenCV
             {
                 foreach (double angle in rotateAngle)
                 {
-                    using Mat rotatedTemplate = RotateImage(template, angle);
+                    using Mat rotatedTemplate = RotateMat(template, angle);
                     findMatches(src, rotatedTemplate);
                 }
             }

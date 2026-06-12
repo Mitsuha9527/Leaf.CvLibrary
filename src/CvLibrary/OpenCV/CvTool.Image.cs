@@ -146,11 +146,48 @@ namespace CvLibrary.OpenCV
             return new Mat(mat, rect1).Clone();
         }
 
+
+        public static Mat RotateImage(Mat mat, double angle)
+        {
+            Mat rotated = new();
+            if (angle == 90)
+            {
+                Cv2.Rotate(mat, rotated, RotateFlags.Rotate90Clockwise);
+            }
+            else if (angle == -90 || angle == 270)
+            {
+                Cv2.Rotate(mat, rotated, RotateFlags.Rotate90Counterclockwise);
+            }
+            else if (angle == 180 || angle == -180)
+            {
+                Cv2.Rotate(mat, rotated, RotateFlags.Rotate180);
+            }
+            else if (angle == 0)
+            {
+                return mat.Clone();
+            }
+            else
+            {
+                Point2f center = new(mat.Width / 2f, mat.Height / 2f);
+                Mat rotationMatrix = Cv2.GetRotationMatrix2D(center, angle, 1.0);
+
+                // Calculate the new bounding box size to prevent cropping
+                var bbox = new RotatedRect(center, mat.Size(), (float)angle).BoundingRect();
+
+                rotationMatrix.Set(0, 2, rotationMatrix.At<double>(0, 2) + bbox.Width / 2.0 - center.X);
+                rotationMatrix.Set(1, 2, rotationMatrix.At<double>(1, 2) + bbox.Height / 2.0 - center.Y);
+
+                Cv2.WarpAffine(mat, rotated, rotationMatrix, bbox.Size);
+            }
+            return rotated;
+        }
+
+
         /// <summary>
         /// 旋转图像（统一使用 WarpAffine，所有角度走同一路径，保证包围盒尺寸连续性）。
         /// 填充区域使用灰色（128），避免黑色边框造成的零方差问题。
         /// </summary>
-        public static Mat RotateImage(Mat mat, double angle, bool isClockwise = true)
+        public static Mat RotateMat(Mat mat, double angle, bool isClockwise = true)
         {
             if (isClockwise)
             {
@@ -223,7 +260,7 @@ namespace CvLibrary.OpenCV
         public static Mat RotateAndConcatenate(Mat mat, bool? vertical = null)
         {
             // 旋转180度
-            using Mat rotated = RotateImage(mat, 180);
+            using Mat rotated = RotateMat(mat, 180);
 
             // 如果未指定拼接方向,根据图像长宽比自动判断
             bool isVertical = vertical ?? DetermineOptimalConcatenation(mat);
